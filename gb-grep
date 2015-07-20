@@ -43,7 +43,7 @@ fi
 echo "Searching for $regexp"
 
 # Get git branches, remove pointers if any (for example HEAD -> something)
-for branch in `git branch -a | sed -re "s/^(.*)->.*$/\1/"`; do
+for branch in `git branch -a | sed -e "s/^\(.*\)->.*$/\1/"`; do
 
   # See if the first lines of the commits matches the searched regexp
   output=`git log --pretty=oneline $branch | grep "$regexp"`
