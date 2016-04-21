@@ -1,0 +1,131 @@
+#!/bin/bash
+#
+# Copyright 2013 Jarek Jarcec Cecho <jarcec@apache.org>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Java Super Simple Version Manager
+#
+# Very simple command line version manager of Java. The current implementation is limited to Mac OS X
+# because it depends on java_home command and will work only in shell. E.g. the only thing that this
+# utility does is providing some sort of higher level abstraction on top of JAVA_HOME variable. Hence
+# only tools that depends on JAVA_HOME will be affected.
+#
+# The basic use is to source this script from your ~/.bashrc or ~/.zshrc which will initiate internal
+# structures and set JAVA_HOME to the default java installation (default is driven by the OS not by 
+# SSVM). Then you have two functions to change the java version:
+#
+# * java-ssvm-select
+#   Interactive command that will print out list of all detected/installed java versions and let you
+#   choose which one you want to use.
+#
+# * java-ssvm-set
+#   Batch command that takes exactly one argument - regular expression of version that you would like
+#   to set. This command will never ask user for input (and hence it's fine to be used in rc files)
+#
+# My environment have several JAVA versions - from 1.7 through early snapshots of 9. My rc file sources
+# SSVM and then calls java-ssvm-set 1.8 to ensure that my "default" java is 1.8. If/when I need to chage
+# that I usually call java-ssvm-select to interactively source the version I need.
+#
+# In addition to providing methods to pick java version, SSVM provides few functions to get version
+# strings of java that is currently in use (well, the one that was picked last time). This is useful
+# if you would like to put the current java version to your shell prompt (I find it quite useful):
+#
+# * java-ssvm-build
+#   Build number like 9-ea+114, 1.8.0_77-b03, 1.7.0_75-b13
+#
+
+# Interactive selection of java version. Will provide list of all installed JDK and let user choose which one should be used.
+function java-ssvm-select {
+  # Arrays for versions and homes (indexes are the same)
+  declare -A versions
+  declare -A homes
+
+  # Mac's java_home command sadly doesn't have any good API how to get list of available options so the idea here is:
+  # 1) get XML which is the closest to computer readable thing
+  # 2) Look for tags JVMHomePath and JMVVersion (names are self explanatory) and always include one line below them (the line that actually contains the required value)
+  # 3) Remove the tags themselves as they are not needed any more and the lines with "--" that greps issues when using -A argument
+  # 4) Get rid of tag <string> in which all the values are enclosed
+  # 5) As the output is in format "home \n version" - merge always two lines together with ":" as separator
+  i=0
+  for opt in `/usr/libexec/java_home -X | grep -e "JVMHomePath" -e "JVMVersion" -A 1 | grep -v -e "JVMHomePath" -e "JVMVersion" -e "--" | sed -re "s/^.*<string>(.*)<\/string>.*$/\1/" | sed 'N;s/\n/:/'`; do
+    versions[$i]=${opt#*:}
+    homes[$i]=${opt%:*}
+    i=`expr $i + 1`
+  done
+
+  # If there is no option, then something went wrong
+  if [[ ${#versions[*]} -eq 0 ]]; then
+    echo "Found no valid JAVA installations"
+    exit 0
+  fi
+
+  # Let user chose the intended version
+  echo "Total number of java installations detected: ${#versions[*]}"
+  i=0
+  for version in ${versions[*]}; do
+    echo -e "$i \t $version"
+    i=`expr $i + 1`
+  done
+
+  # Read
+  echo -ne "Open: "
+  read index
+
+  # And finally set the version
+  java-ssvm-internal-set "${homes[$index]}"
+
+  # Print java version to user
+  java -version
+}
+
+# Batch selection of java version. Accepts one argument - regexp of version that should be used and will pick one that fits the regexp.
+function java-ssvm-set {
+  requiredVersion=$1
+
+  for opt in `/usr/libexec/java_home -X | grep -e "JVMHomePath" -e "JVMVersion" -A 1 | grep -v -e "JVMHomePath" -e "JVMVersion" -e "--" | sed -re "s/^.*<string>(.*)<\/string>.*$/\1/" | sed 'N;s/\n/:/'`; do
+    version=${opt#*:}
+    home=${opt%:*}
+
+    # If this version fits the regexp
+    if [[ $version =~ $requiredVersion ]]; then
+      java-ssvm-internal-set $home
+      return
+    fi
+  done
+}
+
+# Set JAVA_HOME to the path set in $1, no check are performed about validity of the path.
+function java-ssvm-internal-set {
+  home=$1
+
+  # Set JAVA_HOME variable
+  export JAVA_HOME=${home}
+
+  # Rebuild internal variables
+  java-ssvm-internal-build-variables
+}
+
+# Populate global variables where we have stashed
+function java-ssvm-internal-build-variables {
+  export JAVA_SSVM_BUILD=`java -version 2>&1 | grep "build" | head -n 1 | sed -re "s/^.*\(build (.*)\)$/\1/"`
+}
+
+# Return build version of currently active java
+function java-ssvm-build {
+  echo $JAVA_SSVM_BUILD
+}
+
+# On sourcing we will re-use the default OS setting
+java-ssvm-internal-set `/usr/libexec/java_home`
+
