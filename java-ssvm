@@ -48,8 +48,8 @@
 # Interactive selection of java version. Will provide list of all installed JDK and let user choose which one should be used.
 function java-ssvm-select {
   # Arrays for versions and homes (indexes are the same)
-  declare -A versions
-  declare -A homes
+  versions=()
+  homes=()
 
   # Mac's java_home command sadly doesn't have any good API how to get list of available options so the idea here is:
   # 1) get XML which is the closest to computer readable thing
@@ -57,11 +57,9 @@ function java-ssvm-select {
   # 3) Remove the tags themselves as they are not needed any more and the lines with "--" that greps issues when using -A argument
   # 4) Get rid of tag <string> in which all the values are enclosed
   # 5) As the output is in format "home \n version" - merge always two lines together with ":" as separator
-  i=0
   for opt in `/usr/libexec/java_home -X | grep -e "JVMHomePath" -e "JVMVersion" -A 1 | grep -v -e "JVMHomePath" -e "JVMVersion" -e "--" | sed -re "s/^.*<string>(.*)<\/string>.*$/\1/" | sed 'N;s/\n/:/'`; do
-    versions[$i]=${opt#*:}
-    homes[$i]=${opt%:*}
-    i=`expr $i + 1`
+    versions+="${opt#*:}"
+    homes+="${opt%:*}"
   done
 
   # If there is no option, then something went wrong
@@ -72,14 +70,14 @@ function java-ssvm-select {
 
   # Let user chose the intended version
   echo "Total number of java installations detected: ${#versions[*]}"
-  i=0
+  i=1
   for version in ${versions[*]}; do
     echo -e "$i \t $version"
     i=`expr $i + 1`
   done
 
   # Read
-  echo -ne "Open: "
+  echo -ne "Select: "
   read index
 
   # And finally set the version
